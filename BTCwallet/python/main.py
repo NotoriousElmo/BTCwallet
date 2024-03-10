@@ -54,45 +54,48 @@ def showBalance():
 
 @app.route('/transfer', methods=['POST'])
 def createTransaction():
-    euros = request.json.get('amount')
-    exchangeRate = getExchangeRate()
+    try:
+        euros = request.json.get('amount')
+        exchangeRate = getExchangeRate()
 
-    btcTransfer = euros / exchangeRate
+        btcTransfer = euros / exchangeRate
 
-    if btcTransfer <= 0.00001:
-        return {'transfer': 'failure', 'error': 'transfer amount is too small'}
+        if btcTransfer <= 0.00001:
+            return {'transfer': 'failure', 'error': 'transfer amount is too small'}
 
-    connection = mysql.connector.connect(
-    user='root', password='root', host='mysql', port="3306", database='db')
-    print("DB connected")
-    cursor = connection.cursor()
-    cursor.execute('SELECT * FROM transactions WHERE spent = FALSE')
-    unspentTransactions = cursor.fetchall()
+        connection = mysql.connector.connect(
+        user='root', password='root', host='mysql', port="3306", database='db')
+        print("DB connected")
+        cursor = connection.cursor()
+        cursor.execute('SELECT * FROM transactions WHERE spent = FALSE')
+        unspentTransactions = cursor.fetchall()
 
-    totalBalance = 0
-    for transaction in unspentTransactions:
-        totalBalance += float(transaction[0])
+        totalBalance = 0
+        for transaction in unspentTransactions:
+            totalBalance += float(transaction[0])
 
-    if totalBalance < btcTransfer:
-        connection.close()
-        return {'transfer': 'failure', 'error': 'insufficient balance'}
+        if totalBalance < btcTransfer:
+            connection.close()
+            return {'transfer': 'failure', 'error': 'insufficient balance'}
 
-    for transaction in unspentTransactions:
-        if (btcTransfer >= float(transaction[1])):
-            btcTransfer -= float(transaction[1])
-            cursor.execute("UPDATE transactions SET spent = TRUE WHERE transactionID = %s", (transaction[0],))
-            if btcTransfer == 0:
+        for transaction in unspentTransactions:
+            if (btcTransfer >= float(transaction[1])):
+                btcTransfer -= float(transaction[1])
+                cursor.execute("UPDATE transactions SET spent = TRUE WHERE transactionID = %s", (transaction[0],))
+                if btcTransfer == 0:
+                    break
+            elif float(transaction[1]) > btcTransfer:
+                remainingAmount = float(transaction[1]) - btcTransfer
+                cursor.execute("UPDATE transactions SET amount = %s WHERE transactionID = %s", (remainingAmount, transaction[0]))
+                cursor.execute("INSERT INTO transactions (amount, spent) VALUES (%s, %s)", (btcTransfer, True))
+                btcTransfer = 0
                 break
-        elif float(transaction[1]) > btcTransfer:
-            remainingAmount = float(transaction[1]) - btcTransfer
-            cursor.execute("UPDATE transactions SET amount = %s WHERE transactionID = %s", (remainingAmount, transaction[0]))
-            cursor.execute("INSERT INTO transactions (amount, spent) VALUES (%s, %s)", (btcTransfer, True))
-            btcTransfer = 0
-            break
 
-    connection.commit()
-    connection.close()
-    return {'transfer': 'success'}
+        connection.commit()
+        connection.close()
+        return {'transfer': 'success'}
+    except:
+        return {'transfer': 'failure'}
 
 @app.route('/deposit', methods=['POST'])
 def addTransaction():
